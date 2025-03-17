@@ -1109,3 +1109,98 @@ fn test_client() -> Result<()> {
         .with_context(|| "failed execute client.name")?;
     Ok(())
 }
+fn test_auth_commands() -> Result<()> {
+    let port = 6503;
+    let _guards = vec![
+        start_valkey_server_with_module("auth", port)
+            .with_context(|| FAILED_TO_START_SERVER)?
+    ];
+    let mut con = get_valkey_connection(port)
+        .with_context(|| FAILED_TO_CONNECT_TO_SERVER)?;
+
+    // Set up ACL users
+    let res: String = redis::cmd("ACL")
+        .arg(&["SETUSER", "foo", "on", ">allow", "~*", "+@all"])
+        .query(&mut con)?;
+    assert_eq!(&res, "OK");
+
+    let res: String = redis::cmd("ACL")
+        .arg(&["SETUSER", "bar", "on", ">secret", "~*", "+@all"])
+        .query(&mut con)?;
+    assert_eq!(&res, "OK");
+
+    let res: String = redis::cmd("ACL")
+        .arg(&["SETUSER", "admin", "on", ">superSecret123", "~*", "+@all"])
+        .query(&mut con)?;
+    assert_eq!(&res, "OK");
+
+    // Test foo user authentication
+    let response: String = redis::cmd("AUTH")
+        .arg(&["foo", "allow"])
+        .query(&mut con)
+        .with_context(|| "failed to authenticate foo user")?;
+    assert_eq!(response, "OK");
+
+    // Test foo user with wrong password
+    let response: RedisResult<String> = redis::cmd("AUTH")
+        .arg(&["foo", "wrong"])
+        .query(&mut con);
+    assert!(response.is_err());
+    assert!(response.unwrap_err().to_string().contains("Authentication failed"));
+
+    // Test bar user authentication
+    let response: String = redis::cmd("AUTH")
+        .arg(&["bar", "secret"])
+        .query(&mut con)
+        .with_context(|| "failed to authenticate bar user")?;
+    assert_eq!(response, "OK");
+
+    // Test bar user with wrong password
+    let response: RedisResult<String> = redis::cmd("AUTH")
+        .arg(&["bar", "wrong"])
+        .query(&mut con);
+    assert!(response.is_err());
+    assert!(response.unwrap_err().to_string().contains("Authentication failed"));
+
+    // Test admin user authentication
+    let response: String = redis::cmd("AUTH")
+        .arg(&["admin", "superSecret123"])
+        .query(&mut con)
+        .with_context(|| "failed to authenticate admin user")?;
+    assert_eq!(response, "OK");
+
+    // Test admin user with wrong password
+    let response: RedisResult<String> = redis::cmd("AUTH")
+        .arg(&["admin", "wrong"])
+        .query(&mut con);
+    assert!(response.is_err());
+    assert!(response.unwrap_err().to_string().contains("Authentication failed"));
+
+    // Test non-existent user
+    let response: RedisResult<String> = redis::cmd("AUTH")
+        .arg(&["nonexistent", "password"])
+        .query(&mut con);
+    assert!(response.is_err());
+    assert!(response.unwrap_err().to_string().contains("Authentication failed"));
+
+    // Verify ACL permissions
+    let res: String = redis::cmd("ACL")
+        .arg(&["GETUSER", "foo"])
+        .query(&mut con)?;
+    assert!(res.contains("on"));
+    assert!(res.contains(">allow"));
+
+    let res: String = redis::cmd("ACL")
+        .arg(&["GETUSER", "bar"])
+        .query(&mut con)?;
+    assert!(res.contains("on"));
+    assert!(res.contains(">secret"));
+
+    let res: String = redis::cmd("ACL")
+        .arg(&["GETUSER", "admin"])
+        .query(&mut con)?;
+    assert!(res.contains("on"));
+    assert!(res.contains(">superSecret123"));
+
+    Ok(())
+}

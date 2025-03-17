@@ -33,6 +33,11 @@ crate-type = ["cdylib"]
 required-features = ["min-valkey-compatibility-version-8-0"]
 
 [[example]]
+name = "auth"
+crate-type = ["cdylib"]
+required-features = ["min-valkey-compatibility-version-8-0"]
+
+[[example]]
 name = "call"
 crate-type = ["cdylib"]
 required-features = ["min-redis-compatibility-version-7-2"]
@@ -143,6 +148,8 @@ nix = "0.26"
 cfg-if = "1"
 valkey-module-macros-internals = { path = "valkeymodule-rs-macros-internals", version = "0.1.4"}
 log = "0.4"
+argon2 = "0.5"
+once_cell = "1.18"
 
 [dev-dependencies]
 anyhow = "1"
